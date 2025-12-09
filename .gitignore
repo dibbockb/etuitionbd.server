@@ -3,3 +3,4 @@ firebase-jwt.json
 node_modules
 package-lock.json
 package.json
+zap.index.js

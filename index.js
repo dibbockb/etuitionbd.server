@@ -36,20 +36,48 @@ async function run() {
 
         const db = client.db('etuition');
         const userCollection = db.collection('users');
-
+        const tuitionsCollection = db.collection('tuitions');
+        const tutorsCollection = db.collection('tutors');
+        const paymentsCollection = db.collection('payments');
 
         await client.db("admin").command({ ping: 1 });
         console.log("Pinged MongoDB ...");
+
+
+        //push user to database
+        app.post('/users', async (req, res) => {
+            const user = req.body;
+            user.role = 'user';
+            user.createdAt = new Date();
+            const email = user.email;
+            const userExists = await userCollection.findOne({ email })
+
+            if (userExists) {
+                return res.send({ message: 'user exists already...' })
+            }
+
+            const result = await userCollection.insertOne(user);
+            res.send(result);
+        })
+
+        //fetch tutors from collection
+        app.get(`/tutors`, async (req, res) => {
+            const tutors = await tutorsCollection.find().toArray();
+            res.json(tutors);
+        })
+
+
+
     } finally {
     }
 }
-run().catch(console.dir);
 
+
+run().catch(console.dir);
 
 app.get('/', (req, res) => {
     res.send('Server is running...')
 })
-
 app.listen(port, () => {
     console.log(`Listening on port ::: ${port}`)
 })
