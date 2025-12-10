@@ -44,10 +44,10 @@ async function run() {
         console.log("Pinged MongoDB ...");
 
 
-        //push user to database
+        //user >>> database
         app.post('/users', async (req, res) => {
             const user = req.body;
-            user.role = 'user';
+            user.isAdmin = false;
             user.createdAt = new Date();
             const email = user.email;
             const userExists = await userCollection.findOne({ email })
@@ -60,10 +60,16 @@ async function run() {
             res.send(result);
         })
 
-        //fetch tutors from collection
+        //server/tutors <<< database
         app.get(`/tutors`, async (req, res) => {
             const tutors = await tutorsCollection.find().toArray();
             res.json(tutors);
+        })
+
+        //server/tuitions <<< database
+        app.get(`/tuitions`, async (req, res) => {
+            const tuitions = await tuitionsCollection.find().toArray();
+            res.json(tuitions);
         })
 
 
