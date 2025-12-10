@@ -44,7 +44,7 @@ async function run() {
         console.log("Pinged MongoDB ...");
 
 
-        //user >>> database
+        //client.newuser >>> server >>> database
         app.post('/users', async (req, res) => {
             const user = req.body;
             user.isAdmin = false;
@@ -60,17 +60,56 @@ async function run() {
             res.send(result);
         })
 
-        //server/tutors <<< database
+        //client.tutors <<< server <<< database
         app.get(`/tutors`, async (req, res) => {
             const tutors = await tutorsCollection.find().toArray();
             res.json(tutors);
         })
 
-        //server/tuitions <<< database
-        app.get(`/tuitions`, async (req, res) => {
-            const tuitions = await tuitionsCollection.find().toArray();
+        //client.tuitions <<< server <<< database
+        app.get('/tuitions', async (req, res) => {
+            const tuitions = await tuitionsCollection
+                .find()
+                .sort({ createdAt: -1 })
+                .toArray();
+
             res.json(tuitions);
+        });
+
+        //client.tuition.id <<< server <<< database
+        app.get(`/tuitions/:id`, async (req, res) => {
+            const { id } = req.params;
+            try {
+                const tuition = await tuitionsCollection.findOne({
+                    _id: new ObjectId(id)
+                });
+
+                if (!tuition) {
+                    return res.status(404).json({
+                        message: "Cant Find this id"
+                    })
+                }
+
+                res.json(tuition);
+            }
+            catch (err) {
+                res.status(400).json({ message: "ID error" })
+            }
+
         })
+
+
+        //client.newtuition >>> server >>> database
+        app.post(`/newtuition`, async (req, res) => {
+            const newTuition = req.body;
+            newTuition.paymentStatus = 'pending';
+            newTuition.image = `https://dummyimage.com/600x400/000/fff.png&text=${newTuition.subject}`
+            newTuition.createdAt = new Date();
+
+            const result = await tuitionsCollection.insertOne(newTuition);
+            res.send(result);
+        })
+
 
 
 
