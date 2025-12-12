@@ -32,6 +32,7 @@ const client = new MongoClient(uri, {
         deprecationErrors: true,
     }
 });
+
 async function run() {
     try {
         await client.connect();
@@ -55,10 +56,29 @@ async function run() {
             res.json(users);
         })
 
+        //client.userRole <<< server <<< database
+        app.get(`/users/role/:email`, async (req, res) => {
+            const email = req.params.email;
+            const query = {email}
+            const user = await userCollection.findOne(query);
+            res.json({
+                role: user?.userRole || 'norolefound'
+            })
+        })
+
         //client.users <<< server <<< database
         app.get(`/tutors`, async (req, res) => {
             const tutors = await tutorsCollection.find().toArray();
             res.json(tutors);
+        })
+
+        //client.tutor:id <<< server <<< database
+        app.get(`/tutors/:id`, async (req, res) => {
+            const tutor = await tutorsCollection.findOne({
+                _id: new ObjectId(req.params.id),
+                userRole: "tutor"
+            })
+            res.json(tutor);
         })
 
         //client.tuitions <<< server <<< database
@@ -113,6 +133,12 @@ async function run() {
             res.send(result);
         })
 
+        //client.newtutor >>> server >>> database
+        app.post("/tutors", async (req, res) => {
+            const tutor = req.body;
+            const result = await tutorsCollection.insertOne(tutor);
+            res.status(201).json({ insertedId: result.insertedId });
+        });
 
         //client.newtuition >>> server >>> database
         app.post(`/newtuition`, async (req, res) => {
@@ -162,7 +188,7 @@ async function run() {
         app.post(`/apply`, async (req, res) => {
 
             const application = req.body;
-            
+
             try {
                 const result = await applicationsCollection.insertOne(application);
                 res.status(201).send({
