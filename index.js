@@ -59,7 +59,7 @@ async function run() {
         //client.userRole <<< server <<< database
         app.get(`/users/role/:email`, async (req, res) => {
             const email = req.params.email;
-            const query = {email}
+            const query = { email }
             const user = await userCollection.findOne(query);
             res.json({
                 role: user?.userRole || 'norolefound'
@@ -109,6 +109,18 @@ async function run() {
             catch (err) {
                 res.status(400).json({ message: "ID error" })
             }
+
+        })
+
+
+        //client.myTuition <<< server <<< database
+        app.get(`/tuitions/creator/:email`, async (req, res) => {
+            const email = req.params.email;
+            const tuitions = await tuitionsCollection.find({
+                creatorEmail: email
+            }).toArray();
+            res.json(tuitions)
+
 
         })
 
@@ -176,12 +188,45 @@ async function run() {
                 },
                 customer_email: tuitionInfo.creatorEmail,
                 success_url: `${process.env.SITE_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-                cancel_url: `${process.env.SITE_URL}/payment-cancelled`,
+                cancel_url: `${process.env.SITE_URL}/dashboard/my-tuitions`,
             })
 
             res.send({
                 url: session.url
             })
+        })
+
+        //update payment status
+        app.post(`/payment-success`, async (req, res) => {
+            const { session_id } = req.body;
+            const session = await stripe.checkout.sessions.retrieve(session_id);
+
+
+            try {
+                if (session.payment_status !== 'paid') {
+                    return res.status(400).json({
+                        message: "Incomplte payment..."
+                    })
+                }
+
+                const tuitionId = session.metadata.tuitionId;
+                await tuitionsCollection.updateOne({
+                    _id: new ObjectId(tuitionId),
+
+                }, {
+                    $set: {
+                        paymentStatus: "Paid",
+                        paymentDate: new Date()
+                    }
+                })
+            } catch (error) {
+                console.error(err);
+                res.status(500).json({ message: " error" });
+            }
+
+            res.json({ success: true, message: "Payment confirmed" });
+
+
         })
 
         //application for tuition
