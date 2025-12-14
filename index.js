@@ -120,11 +120,17 @@ async function run() {
                 creatorEmail: email
             }).toArray();
             res.json(tuitions)
-
-
         })
 
 
+        //client.applications <<< server <<< database
+        app.get(`/applications/creator/:email`, async (req, res) => {
+            const tutorEmail = req.params.email;
+            const applications = await applicationsCollection.find({
+                tutorEmail: tutorEmail,
+            }).toArray();
+            res.json(applications);
+        })
 
         //-----------------------------------------------------------------
         //***post APIS***
@@ -252,6 +258,7 @@ async function run() {
 
 
 
+
         //-----------------------------------------------------------------
         //***patch APIS */
 
@@ -278,6 +285,25 @@ async function run() {
         });
 
 
+        //tutor.updateApplication >>> database
+        app.patch("/update-application/:id", async (req, res) => {
+            const updateData = req.body;
+            const { id } = req.params;
+
+            try {
+                const result = await applicationsCollection.updateOne(
+                    { _id: new ObjectId(id) },
+                    { $set: updateData }
+                );
+                res.json({ success: true, modifiedCount: result.modifiedCount });
+            } catch (error) {
+                console.log(error);
+                res.send({
+                    message: `failed`,
+                })
+
+            }
+        })
 
 
         //-----------------------------------------------------------------
@@ -300,6 +326,23 @@ async function run() {
                 res.status(400).json({ message: "Invalid format or server error." });
             }
         });
+
+        //application.delete >>> database
+        app.delete(`/applications/delete/:id`, async (req , res) => {
+            const {id} = req.params;
+
+            try {
+                const result = await applicationsCollection.deleteOne({
+                    _id: new ObjectId(id)
+                });
+
+                res.json({message: `deleted application`, deletedCount: result.deletedCount});
+            } catch (error) {
+                res.json({
+                    message: `error`
+                })
+            }
+        })
 
 
 
