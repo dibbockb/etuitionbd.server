@@ -122,6 +122,16 @@ async function run() {
             res.json(tuitions)
         })
 
+        //client.studentPayments <<< server <<< database
+        app.get(`/tuitions/payee/:email`, async (req, res) =>{
+            const email = req.params.email
+            const payments = await tuitionsCollection.find({
+                creatorEmail: email,
+                paymentStatus: "Paid"
+            }).toArray();
+            res.json(payments);
+        })
+
 
         //client.applications <<< server <<< database
         app.get(`/applications/creator/:email`, async (req, res) => {
