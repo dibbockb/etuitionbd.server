@@ -56,6 +56,14 @@ async function run() {
             res.json(users);
         })
 
+        //client.user:email <<< server <<< database
+        app.get(`/users/:email`, async (req, res) => {
+            const email = req.params.email;
+            const query = { email }
+            const user = await userCollection.findOne(query);
+            res.json(user);
+        });
+
         //client.userRole <<< server <<< database
         app.get(`/users/role/:email`, async (req, res) => {
             const email = req.params.email;
@@ -123,7 +131,7 @@ async function run() {
         })
 
         //client.studentPayments <<< server <<< database
-        app.get(`/tuitions/payee/:email`, async (req, res) =>{
+        app.get(`/tuitions/payee/:email`, async (req, res) => {
             const email = req.params.email
             const payments = await tuitionsCollection.find({
                 creatorEmail: email,
@@ -315,6 +323,25 @@ async function run() {
             }
         })
 
+        //update.user <<< server <<< database
+        app.patch(`/users/:email`, async (req, res) => {
+            const updateData = req.body;
+            const { email } = req.params;
+
+            try {
+                const result = await userCollection.updateOne(
+                    { email },
+                    { $set: updateData }
+                );
+                res.json({ success: true, modifiedCount: result.modifiedCount });
+            } catch (error) {
+                console.log(error);
+                res.send({
+                    message: `error`,
+                })
+            }
+        })
+
 
         //-----------------------------------------------------------------
         // ***delete APIS***
@@ -338,15 +365,15 @@ async function run() {
         });
 
         //application.delete >>> database
-        app.delete(`/applications/delete/:id`, async (req , res) => {
-            const {id} = req.params;
+        app.delete(`/applications/delete/:id`, async (req, res) => {
+            const { id } = req.params;
 
             try {
                 const result = await applicationsCollection.deleteOne({
                     _id: new ObjectId(id)
                 });
 
-                res.json({message: `deleted application`, deletedCount: result.deletedCount});
+                res.json({ message: `deleted application`, deletedCount: result.deletedCount });
             } catch (error) {
                 res.json({
                     message: `error`
