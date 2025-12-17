@@ -48,6 +48,23 @@ async function run() {
     //-----------------------------------------------------------------
     //***get APIS***
 
+    //fetch 3 tuitions and tutors
+    app.get('/tuitions/limited', async (req, res) => {
+      const cursor = tuitionsCollection.find()
+        .sort({ createdAt: -1 })
+        .limit(3);
+      const result = await cursor.toArray();
+      res.json(result);
+    });
+
+    app.get('/tutors/limited', async (req, res) => {
+      const cursor = tutorsCollection.find()
+        .sort({ createdAt: -1 })
+        .limit(3);
+      const result = await cursor.toArray();
+      res.json(result);
+    });
+
     //client.users <<< server <<< database
     app.get(`/users`, async (req, res) => {
       const users = await userCollection.find().toArray();
@@ -90,12 +107,21 @@ async function run() {
     //client.tuitions <<< server <<< database
     app.get("/tuitions", async (req, res) => {
       const tuitions = await tuitionsCollection
-        .find()
+        .find({
+          isAdminApproved: true
+        })
         .sort({ createdAt: -1 })
         .toArray();
 
       res.json(tuitions);
     });
+
+    //ADMIN.allTuitions <<< DATABASE
+    app.get(`/admin/tuitions/all`, async (req, res) => {
+      const allTuitions = await tuitionsCollection.find()
+        .toArray();
+      res.json(allTuitions)
+    })
 
     //client.tuition.id <<< server <<< database
     app.get(`/tuitions/:id`, async (req, res) => {
@@ -205,6 +231,7 @@ async function run() {
       const newTuition = req.body;
       newTuition.paymentStatus = "Pending";
       newTuition.approvalStatus = "Pending";
+      newTuition.isAdminApproved = false;
       newTuition.image = `https://dummyimage.com/600x400/000/fff.png&text=${newTuition.subject}`;
       newTuition.createdAt = new Date();
 
@@ -413,8 +440,51 @@ async function run() {
       }
     });
 
+    //ADMIN.ACCEPTTUITION >>> DATABASE
+    app.patch(`/admin/tuitions/accept/:tuitionId`, async (req, res) => {
+      const tuitionId = req.params.tuitionId;
+      try {
+        const result = await tuitionsCollection.updateOne({
+          _id: new ObjectId(tuitionId)
+        }, {
+          $set: { isAdminApproved: true }
+        })
+        res.json({
+          success: true,
+          message: `accepted as admin successfully`
+        })
+      } catch (error) {
+        res.json({
+          message: `unable to accept tuition as admin`
+        })
+      }
+    })
+
+
     //-----------------------------------------------------------------
     // ***delete APIS***
+    //ADMIN.DELETETUITION >>> DATABASE
+    app.delete(`/admin/tuitions/delete/:tuitionId`, async (req, res) => {
+      const tuitionId = req.params.tuitionId
+      try {
+        const result = await tuitionsCollection.deleteOne({
+          _id: new ObjectId(tuitionId)
+        })
+        if (result.deletedCount === 0) {
+          return res.json({
+            message: `no such tuition found to delete as admin`
+          })
+        }
+        res.json({
+          success: true,
+          message: `deleted as admin successfully`
+        })
+      } catch (error) {
+        res.json({ message: `failed to delete as admin` })
+      }
+    })
+
+
     app.delete(`/tuitions/delete/:id`, async (req, res) => {
       const { id } = req.params;
 
@@ -435,6 +505,7 @@ async function run() {
         res.status(400).json({ message: "Invalid format or server error." });
       }
     });
+
 
     //application.delete >>> database
     app.delete(`/applications/delete/:id`, async (req, res) => {
