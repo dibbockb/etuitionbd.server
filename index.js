@@ -42,8 +42,8 @@ async function run() {
     const paymentsCollection = db.collection("payments");
     const applicationsCollection = db.collection("applications");
 
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged MongoDB ...");
+    // await client.db("admin").command({ ping: 1 });
+    // console.log("Pinged MongoDB ...");
 
     //-----------------------------------------------------------------
     //***get APIS***
@@ -160,6 +160,19 @@ async function run() {
         .toArray();
       res.json(applicants);
     });
+
+    //client.approvedApplications <<< server <<<database
+    app.get(`/applications/approved/:tutorEmail`, async (req, res) => {
+      const tutorEmail = req.params.tutorEmail;
+      const approvedApplications = await applicationsCollection.find({
+        tutorEmail: tutorEmail,
+        applicationStatus: "Approved",
+      })
+        .toArray();
+      res.send(
+        approvedApplications
+      )
+    })
 
     //-----------------------------------------------------------------
     //***post APIS***
@@ -390,13 +403,13 @@ async function run() {
         })
         res.json({
           success: true,
-          message:`rejected tutor successfully.`,
+          message: `rejected tutor successfully.`,
         })
       } catch (error) {
         res.json({
           message: `failed rejecting other tutors`
         })
-        
+
       }
     });
 
