@@ -165,6 +165,17 @@ async function run() {
       res.json(payments);
     });
 
+    //ADMIN.ALLPAYMENTS <<< DATABASE
+    app.get(`/admin/payments-log`, async (req, res) => {
+      try {
+        const paymentsLog = await applicationsCollection.find({
+          paymentStatus: "Paid",
+        }).toArray();
+        res.send(paymentsLog)
+      } catch (error) {
+      }
+    })
+
     //client.applications <<< server <<< database
     app.get(`/applications/creator/:email`, async (req, res) => {
       const tutorEmail = req.params.email;
