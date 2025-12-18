@@ -399,6 +399,26 @@ async function run() {
       }
     });
 
+    //ADMIN.UPDATEUSER >>> DATABASE
+    app.patch(`/admin/update-user/:userId`, async (req, res) => {
+      const updateData = req.body;
+      const { userId } = req.params;
+
+      try {
+        const result = await userCollection.updateOne({
+          _id: new ObjectId(userId)
+        }, {
+          $set: updateData
+        })
+        res.json({ success: true, modifiedCount: result.modifiedCount });
+      } catch (error) {
+        console.log(error);
+        res.send({
+          message: `failed`,
+        });
+      }
+    })
+
     //update.user <<< server <<< database
     app.patch(`/users/:email`, async (req, res) => {
       const updateData = req.body;
@@ -483,6 +503,29 @@ async function run() {
         res.json({ message: `failed to delete as admin` })
       }
     })
+
+    //ADMIN DELETE USER
+    app.delete(`/admin/users/delete/:userId`, async (req, res) => {
+      const userId = req.params.userId
+      try {
+        const result = await userCollection.deleteOne({
+          _id: new ObjectId(userId)
+        })
+        if (result.deletedCount === 0) {
+          return res.json({
+            message: `no user found to delete as admin`
+          })
+        }
+        res.json({
+          success: true,
+          message: `deleted user as admin successfully`
+        })
+      } catch (error) {
+        res.json({ message: `failed to delete user as admin` })
+      }
+    })
+
+
 
 
     app.delete(`/tuitions/delete/:id`, async (req, res) => {
