@@ -5,3 +5,6 @@ package-lock.json
 package.json
 zap.index.js
 .vercel
+mine.js
+cache.js
+eTuition-serviceAccount.json

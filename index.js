@@ -2,24 +2,15 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 require("dotenv").config();
-
+const jwt = require('jsonwebtoken');
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const port = process.env.PORT || 3000;
 const crypto = require("crypto");
-const { messaging } = require("firebase-admin");
+const { messaging, auth } = require("firebase-admin");
 const stripe = require("stripe")(process.env.STRIPE_KEY);
-
-//jwt
-// const admin = require("firebase-admin");
-// const serviceAccount = require("firebase-jwt.json");
-// admin.initializeApp({
-//     credential: admin.credential.cert(serviceAccount)
-// });
-
-//mongoDB
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@etuition.lmeq1nq.mongodb.net/?appName=etuition`;
 
-//midleware
+//middleware
 app.use(express.json());
 app.use(cors());
 
@@ -31,19 +22,61 @@ const client = new MongoClient(uri, {
   },
 });
 
+const verifyToken = (req, res, next) => {
+  const authorization = req.headers.authorization;
+
+  if (!authorization) {
+    return res.status(401).send({ message: `No auth header found -verifyJWTToken` })
+  }
+
+  const token = authorization.split(' ')[1];
+  if (!token) {
+    return res.status(401).send({ message: `No Token Found in Auth Header, -verifyJWTToken` })
+  }
+
+  jwt.verify(token, process.env.JWT_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: `Token isnt Valid` })
+    }
+    req.token_email = decoded.email
+    next()
+
+  })
+}
+
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("etuition");
     const userCollection = db.collection("users");
     const tuitionsCollection = db.collection("tuitions");
     const tutorsCollection = db.collection("tutors");
-    const paymentsCollection = db.collection("payments");
     const applicationsCollection = db.collection("applications");
 
-    // await client.db("admin").command({ ping: 1 });
-    // console.log("Pinged MongoDB ...");
+
+    ///JWT APIs
+    app.post(`/getToken`, async (req, res) => {
+      const loggedUser = req.body;
+      const token = jwt.sign(loggedUser, process.env.JWT_KEY, { expiresIn: '30d' })
+      res.send({ token: token });
+    })
+
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.token_email;
+
+      try {
+        const user = await userCollection.findOne({ email })
+
+        if (user.userRole !== 'admin') {
+          return res.status(403).send({ message: `admin action only -verifyAdmin` })
+        }
+
+        next()
+      } catch (error) {
+        res.status(500).send({ message: `server error during admin check, -verifyAdmin` })
+      }
+    };
 
     //-----------------------------------------------------------------
     //***get APIS***
@@ -66,7 +99,7 @@ async function run() {
     });
 
     //client.users <<< server <<< database
-    app.get(`/users`, async (req, res) => {
+    app.get(`/users`, verifyToken, async (req, res) => {
       const users = await userCollection.find().toArray();
       res.json(users);
     });
@@ -90,13 +123,13 @@ async function run() {
     });
 
     //client.users <<< server <<< database
-    app.get(`/tutors`, async (req, res) => {
+    app.get(`/tutors`, verifyToken, async (req, res) => {
       const tutors = await tutorsCollection.find().toArray();
       res.json(tutors);
     });
 
     //client.tutor:id <<< server <<< database
-    app.get(`/tutors/:id`, async (req, res) => {
+    app.get(`/tutors/:id`, verifyToken, async (req, res) => {
       const tutor = await tutorsCollection.findOne({
         _id: new ObjectId(req.params.id),
         userRole: "tutor",
@@ -106,25 +139,45 @@ async function run() {
 
     //client.tuitions <<< server <<< database
     app.get("/tuitions", async (req, res) => {
-      const tuitions = await tuitionsCollection
-        .find({
+      try {
+        const page = parseInt(req.query.page) || 1;
+        const limit = parseInt(req.query.limit) || 5;
+        const skip = (page - 1) * limit;
+        const totalCount = await tuitionsCollection.countDocuments({
           isAdminApproved: true
-        })
-        .sort({ createdAt: -1 })
-        .toArray();
+        });
+        const tuitions = await tuitionsCollection
+          .find({ isAdminApproved: true })
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .toArray();
 
-      res.json(tuitions);
+        const totalPages = Math.ceil(totalCount / limit);
+
+        res.json({
+          totalCount,
+          totalPages,
+          tuitions,
+          currentPage: page,
+          hasNext: page < totalPages,
+          hasPrev: page > 1
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "erro when fetcing from database" });
+      }
     });
 
     //ADMIN.allTuitions <<< DATABASE
-    app.get(`/admin/tuitions/all`, async (req, res) => {
+    app.get(`/admin/tuitions/all`, verifyToken, verifyAdmin, async (req, res) => {
       const allTuitions = await tuitionsCollection.find()
         .toArray();
       res.json(allTuitions)
     })
 
     //client.tuition.id <<< server <<< database
-    app.get(`/tuitions/:id`, async (req, res) => {
+    app.get(`/tuitions/:id`, verifyToken, async (req, res) => {
       const { id } = req.params;
       try {
         const tuition = await tuitionsCollection.findOne({
@@ -143,7 +196,7 @@ async function run() {
     });
 
     //client.myTuition <<< server <<< database
-    app.get(`/tuitions/creator/:email`, async (req, res) => {
+    app.get(`/tuitions/creator/:email`, verifyToken, async (req, res) => {
       const email = req.params.email;
       const tuitions = await tuitionsCollection
         .find({
@@ -154,7 +207,7 @@ async function run() {
     });
 
     //client.studentPayments <<< server <<< database
-    app.get(`/tuitions/payee/:email`, async (req, res) => {
+    app.get(`/tuitions/payee/:email`, verifyToken, async (req, res) => {
       const email = req.params.email;
       const payments = await applicationsCollection
         .find({
@@ -166,7 +219,7 @@ async function run() {
     });
 
     //ADMIN.ALLPAYMENTS <<< DATABASE
-    app.get(`/admin/payments-log`, async (req, res) => {
+    app.get(`/admin/payments-log`, verifyToken, verifyAdmin, async (req, res) => {
       try {
         const paymentsLog = await applicationsCollection.find({
           paymentStatus: "Paid",
@@ -177,7 +230,7 @@ async function run() {
     })
 
     //client.applications <<< server <<< database
-    app.get(`/applications/creator/:email`, async (req, res) => {
+    app.get(`/applications/creator/:email`, verifyToken, async (req, res) => {
       const tutorEmail = req.params.email;
       const applications = await applicationsCollection
         .find({
@@ -188,7 +241,7 @@ async function run() {
     });
 
     //client.application:creator <<< server <<< database
-    app.get(`/applications/tuitioncreator/:creator`, async (req, res) => {
+    app.get(`/applications/tuitioncreator/:creator`, verifyToken, async (req, res) => {
       const user = req.params.creator;
       const applicants = await applicationsCollection
         .find({
@@ -199,7 +252,7 @@ async function run() {
     });
 
     //client.approvedApplications <<< server <<<database
-    app.get(`/applications/approved/:tutorEmail`, async (req, res) => {
+    app.get(`/applications/approved/:tutorEmail`, verifyToken, async (req, res) => {
       const tutorEmail = req.params.tutorEmail;
       const approvedApplications = await applicationsCollection.find({
         tutorEmail: tutorEmail,
@@ -238,7 +291,7 @@ async function run() {
     });
 
     //client.newtuition >>> server >>> database
-    app.post(`/newtuition`, async (req, res) => {
+    app.post(`/newtuition`, verifyToken, async (req, res) => {
       const newTuition = req.body;
       newTuition.paymentStatus = "Pending";
       newTuition.approvalStatus = "Pending";
@@ -251,7 +304,7 @@ async function run() {
     });
 
     //payment API
-    app.post(`/checkout`, async (req, res) => {
+    app.post(`/checkout`, verifyToken, async (req, res) => {
       const tuitionInfo = req.body;
       const fee = tuitionInfo.fee;
       const session = await stripe.checkout.sessions.create({
@@ -282,7 +335,7 @@ async function run() {
     });
 
     //update payment status
-    app.post("/payment-success", async (req, res) => {
+    app.post("/payment-success", verifyToken, async (req, res) => {
       const { session_id } = req.body;
 
       try {
@@ -319,38 +372,42 @@ async function run() {
     });
 
     //checkout Tutor Payment
-    app.post(`/checkout-tutor`, async (req, res) => {
-      const applicationInfo = req.body;
-      const fee = applicationInfo.fee;
-      const session = await stripe.checkout.sessions.create({
-        line_items: [
-          {
-            price_data: {
-              currency: "bdt",
-              unit_amount: fee,
-              product_data: {
-                name: `Payment for: ${applicationInfo.subject}`,
+    app.post(`/checkout-tutor`, verifyToken, async (req, res) => {
+      try {
+        const applicationInfo = req.body;
+        const fee = applicationInfo.fee;
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "bdt",
+                unit_amount: fee,
+                product_data: {
+                  name: `Payment for: ${applicationInfo.subject}`,
+                },
               },
+              quantity: 1,
             },
-            quantity: 1,
+          ],
+          mode: "payment",
+          metadata: {
+            applicationId: applicationInfo._id,
           },
-        ],
-        mode: "payment",
-        metadata: {
-          applicationId: applicationInfo._id,
-        },
-        customer_email: applicationInfo.creatorEmail,
-        success_url: `${process.env.SITE_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
-        cancel_url: `${process.env.SITE_URL}/dashboard/my-tuitions`,
-      });
+          customer_email: applicationInfo.creatorEmail,
+          success_url: `${process.env.SITE_URL}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_URL}/dashboard/my-tuitions`,
+        });
 
-      res.send({
-        url: session.url,
-      });
+        res.send({
+          url: session.url,
+        });
+      } catch (error) {
+        res.status(500).json({ message: "Server error" });
+      }
     });
 
     //application for tuition
-    app.post(`/apply`, async (req, res) => {
+    app.post(`/apply`, verifyToken, async (req, res) => {
       const application = req.body;
 
       try {
@@ -360,7 +417,6 @@ async function run() {
           insertedId: result.insertedId,
         });
       } catch (error) {
-        console.log(error);
         res.status(500).send({
           message: "failed",
         });
@@ -370,7 +426,7 @@ async function run() {
     //-----------------------------------------------------------------
     //***patch APIS */
 
-    app.patch("/tuitions/:id", async (req, res) => {
+    app.patch("/tuitions/:id", verifyToken, async (req, res) => {
       const { id } = req.params;
       const updatedData = req.body;
       try {
@@ -392,7 +448,7 @@ async function run() {
     });
 
     //tutor.updateApplication >>> database
-    app.patch("/update-application/:id", async (req, res) => {
+    app.patch("/update-application/:id", verifyToken, async (req, res) => {
       const updateData = req.body;
       const { id } = req.params;
 
@@ -403,7 +459,6 @@ async function run() {
         );
         res.json({ success: true, modifiedCount: result.modifiedCount });
       } catch (error) {
-        console.log(error);
         res.send({
           message: `failed`,
         });
@@ -411,7 +466,7 @@ async function run() {
     });
 
     //ADMIN.UPDATEUSER >>> DATABASE
-    app.patch(`/admin/update-user/:userId`, async (req, res) => {
+    app.patch(`/admin/update-user/:userId`, verifyToken, verifyAdmin, async (req, res) => {
       const updateData = req.body;
       const { userId } = req.params;
 
@@ -423,7 +478,6 @@ async function run() {
         })
         res.json({ success: true, modifiedCount: result.modifiedCount });
       } catch (error) {
-        console.log(error);
         res.send({
           message: `failed`,
         });
@@ -431,7 +485,7 @@ async function run() {
     })
 
     //update.user <<< server <<< database
-    app.patch(`/users/:email`, async (req, res) => {
+    app.patch(`/users/:email`, verifyToken, async (req, res) => {
       const updateData = req.body;
       const { email } = req.params;
 
@@ -442,7 +496,6 @@ async function run() {
         );
         res.json({ success: true, modifiedCount: result.modifiedCount });
       } catch (error) {
-        console.log(error);
         res.send({
           message: `error`,
         });
@@ -450,7 +503,7 @@ async function run() {
     });
 
     //client reject other tutors >>> server >>> database
-    app.patch("/applications/reject/:rejectedTutorId", async (req, res) => {
+    app.patch("/applications/reject/:rejectedTutorId", verifyToken, async (req, res) => {
       const { rejectedTutorId } = req.params;
 
       try {
@@ -472,7 +525,7 @@ async function run() {
     });
 
     //ADMIN.ACCEPTTUITION >>> DATABASE
-    app.patch(`/admin/tuitions/accept/:tuitionId`, async (req, res) => {
+    app.patch(`/admin/tuitions/accept/:tuitionId`, verifyToken, verifyAdmin, async (req, res) => {
       const tuitionId = req.params.tuitionId;
       try {
         const result = await tuitionsCollection.updateOne({
@@ -495,7 +548,7 @@ async function run() {
     //-----------------------------------------------------------------
     // ***delete APIS***
     //ADMIN.DELETETUITION >>> DATABASE
-    app.delete(`/admin/tuitions/delete/:tuitionId`, async (req, res) => {
+    app.delete(`/admin/tuitions/delete/:tuitionId`, verifyToken, verifyAdmin, async (req, res) => {
       const tuitionId = req.params.tuitionId
       try {
         const result = await tuitionsCollection.deleteOne({
@@ -516,7 +569,7 @@ async function run() {
     })
 
     //ADMIN DELETE USER
-    app.delete(`/admin/users/delete/:userId`, async (req, res) => {
+    app.delete(`/admin/users/delete/:userId`, verifyToken, verifyAdmin, async (req, res) => {
       const userId = req.params.userId
       try {
         const result = await userCollection.deleteOne({
@@ -535,9 +588,6 @@ async function run() {
         res.json({ message: `failed to delete user as admin` })
       }
     })
-
-
-
 
     app.delete(`/tuitions/delete/:id`, async (req, res) => {
       const { id } = req.params;
@@ -560,7 +610,6 @@ async function run() {
       }
     });
 
-
     //application.delete >>> database
     app.delete(`/applications/delete/:id`, async (req, res) => {
       const { id } = req.params;
@@ -580,17 +629,20 @@ async function run() {
         });
       }
     });
+
+
   } catch {
     //errorhandle
   } finally {
   }
 }
-
 run().catch(console.dir);
 
 app.get("/", (req, res) => {
   res.send("Server is running...");
 });
+
 app.listen(port, () => {
   console.log(`Listening on port ::: ${port}`);
 });
+
